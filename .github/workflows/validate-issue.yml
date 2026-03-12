@@ -35,7 +35,7 @@ jobs:
             // 示例值列表：用户可能直接照搬的 placeholder 文本
             const exampleValues = [
               /^例如[：:]/,
-              /^1\.\s*点击「\.\.\./,
+              /^请填写/,
             ];
 
             function getSectionContent(body, header) {
