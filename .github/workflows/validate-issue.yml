@@ -1,0 +1,84 @@
+name: 验证 Issue 格式
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    if: github.event.issue.pull_request == null
+    permissions:
+      issues: write
+    steps:
+      - name: 检查必填字段
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+            const issueNumber = context.payload.issue.number;
+            const labels = context.payload.issue.labels.map(l => l.name);
+
+            // 只检查 bug 类 issue
+            if (!labels.includes('bug')) return;
+
+            // GitHub issue forms 渲染后的 section 标题
+            const requiredSections = [
+              { header: '### 描述', name: '描述' },
+              { header: '### 如何复现', name: '如何复现' },
+              { header: '### 预期的表现', name: '预期的表现' },
+              { header: '### 手机设备及型号', name: '手机设备及型号' },
+              { header: '### 操作系统版本', name: '操作系统版本' },
+              { header: '### 知乎++ 版本', name: '知乎++ 版本' },
+            ];
+
+            // 示例值列表：用户可能直接照搬的 placeholder 文本
+            const exampleValues = [
+              /^例如[：:]/,
+              /^1\.\s*点击「\.\.\./,
+            ];
+
+            function getSectionContent(body, header) {
+              const idx = body.indexOf(header);
+              if (idx === -1) return null;
+              const afterHeader = body.slice(idx + header.length);
+              const nextSection = afterHeader.search(/\n###\s/);
+              return (nextSection === -1 ? afterHeader : afterHeader.slice(0, nextSection)).trim();
+            }
+
+            function isExampleValue(content) {
+              return exampleValues.some(re => re.test(content));
+            }
+
+            const missingFields = [];
+            for (const section of requiredSections) {
+              const content = getSectionContent(body, section.header);
+              if (content === null || content === '' || content === '_No response_' || isExampleValue(content)) {
+                missingFields.push(section.name);
+              }
+            }
+
+            if (missingFields.length === 0) return;
+
+            const fieldList = missingFields.map(f => `- **${f}**`).join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: `👋 感谢您的反馈！\n\n此 issue 因以下必填字段**未填写或仍为示例值**，已被自动关闭：\n\n${fieldList}\n\n请重新提交 issue 并如实填写所有必填字段。如有疑问，欢迎在 [Discussions](../../discussions) 中交流。`,
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              state: 'closed',
+              state_reason: 'not_planned',
+            });
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: ['invalid'],
+            });
